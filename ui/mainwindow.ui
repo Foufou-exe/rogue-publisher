@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+ï»¿<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>Rogue Publisher</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -25,7 +25,7 @@
         <item>
          <widget class="QLabel" name="label">
           <property name="text">
-           <string>Fichiers à versionner :</string>
+           <string>Fichiers a versionner :</string>
           </property>
          </widget>
         </item>
@@ -41,7 +41,7 @@
         </item>
        </layout>
       </widget>
-      <widget class="QWidget" name="layoutWidget">
+      <widget class="QWidget" name="layoutWidget1">
        <layout class="QVBoxLayout" name="rightPanelLayout">
         <item>
          <widget class="QLabel" name="label_2">
@@ -71,7 +71,7 @@
        </font>
       </property>
       <property name="text">
-       <string>Simuler le Commit &amp; Push sur GitHub</string>
+       <string>Deposer sur GitHub</string>
       </property>
      </widget>
     </item>
@@ -94,6 +94,14 @@
     <addaction name="separator"/>
     <addaction name="actionQuitter"/>
    </widget>
+   <widget class="QMenu" name="menuActions">
+    <property name="title">
+     <string>Actions</string>
+    </property>
+    <addaction name="actionConfigurer"/>
+   </widget>
+   <addaction name="menuFichier"/>
+   <addaction name="menuActions"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionOuvrir">
@@ -104,6 +112,11 @@
   <action name="actionQuitter">
    <property name="text">
     <string>Quitter</string>
+   </property>
+  </action>
+  <action name="actionConfigurer">
+   <property name="text">
+    <string>Configurer Git...</string>
    </property>
   </action>
  </widget>
