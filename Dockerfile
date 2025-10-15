@@ -13,11 +13,21 @@ RUN apt-get update && apt-get install -y \
     libxcb-image0-dev \
     libxcb-keysyms1-dev \
     libxcb-render-util0-dev \
+    libxcb-xinerama0-dev \
+    libxcb-render-util0-dev \
     libxcb-xinerama0-dev
 
-# Copie du code source
+# Copie sélective uniquement des fichiers nécessaires
 WORKDIR /app
-COPY . .
+
+# Copier les fichiers de configuration CMake
+COPY CMakeLists.txt ./
+
+# Copier les répertoires source
+COPY src/ ./src/
+COPY include/ ./include/
+COPY ui/ ./ui/
+COPY resources/ ./resources/
 
 # Compilation
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -25,6 +35,9 @@ RUN cmake --build build -j $(nproc)
 
 # Étape 2: Environnement d'exécution minimal
 FROM ubuntu:22.04
+
+# Créer un utilisateur non-root pour plus de sécurité
+RUN useradd -m -u 1000 appuser
 
 # Installation des dépendances d'exécution Qt
 RUN apt-get update && apt-get install -y \
@@ -39,6 +52,10 @@ RUN apt-get update && apt-get install -y \
 # Copie du binaire compilé
 WORKDIR /app
 COPY --from=build /app/build/rogue-publisher .
+
+# Changer la propriété et passer à l'utilisateur non-root
+RUN chown -R appuser:appuser /app
+USER appuser
 
 # Point d'entrée pour lancer l'application
 ENTRYPOINT ["./rogue-publisher"]
