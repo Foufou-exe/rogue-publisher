@@ -315,127 +315,89 @@ void MainWindow::on_addFilesButton_clicked() {
         }
     }
     
-    QStringList files = QFileDialog::getOpenFileNames(
+    // NOUVEAU: Choix entre fichiers ou dossiers
+    QMessageBox::StandardButton reply = QMessageBox::question(
         this,
-        "Selectionner des fichiers a ajouter",
-        QDir::homePath(),
-        "Tous les fichiers (*.*)"
+        "Type de selection",
+        "Que voulez-vous ajouter ?",
+        QMessageBox::StandardButton::Open | QMessageBox::StandardButton::Open | QMessageBox::StandardButton::Cancel,
+        QMessageBox::StandardButton::Cancel
     );
-
-    if (files.isEmpty()) {
-        logMessage("Selection de fichiers annulee.");
+    
+    // Utiliser un dialogue personnalisé
+    QMessageBox choiceBox(this);
+    choiceBox.setWindowTitle("Type de selection");
+    choiceBox.setText("Que voulez-vous ajouter ?");
+    QPushButton* filesBtn = choiceBox.addButton("Fichiers", QMessageBox::ActionRole);
+    QPushButton* folderBtn = choiceBox.addButton("Dossier/Projet", QMessageBox::ActionRole);
+    QPushButton* cancelBtn = choiceBox.addButton("Annuler", QMessageBox::RejectRole);
+    
+    choiceBox.exec();
+    
+    QStringList paths;
+    
+    if (choiceBox.clickedButton() == filesBtn) {
+        // Selection de fichiers
+        paths = QFileDialog::getOpenFileNames(
+            this,
+            "Selectionner des fichiers",
+            QDir::homePath(),
+            "Tous les fichiers (*.*)"
+        );
+    } 
+    else if (choiceBox.clickedButton() == folderBtn) {
+        // Selection de dossier
+        QString folder = QFileDialog::getExistingDirectory(
+            this,
+            "Selectionner un dossier",
+            QDir::homePath(),
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
+        );
+        
+        if (!folder.isEmpty()) {
+            paths << folder;
+        }
+    } 
+    else {
+        logMessage("Selection annulee.");
         return;
     }
     
-    // Copier chaque fichier dans le depot
-    int copiedCount = 0;
-    int skippedCount = 0;
-    int alreadyInRepo = 0;
+    if (paths.isEmpty()) {
+        logMessage("Aucun element selectionne.");
+        return;
+    }
     
-    for (const QString& sourceFile : files) {
-        QFileInfo sourceInfo(sourceFile);
+    // Copier les fichiers/dossiers dans le depot
+    if (!m_gitManager->copyProjectRecursively(m_repositoryPath, paths)) {
+        return;
+    }
+    
+    // Ajouter a l'affichage
+    for (const QString& path : paths) {
+        QFileInfo info(path);
+        QString displayName = info.fileName();
         
-        if (!sourceInfo.exists()) {
-            logError(QString("Fichier introuvable: %1").arg(sourceFile));
-            skippedCount++;
-            continue;
+        if (info.isDir()) {
+            displayName += " (dossier)";
         }
         
-        // Verifier si le fichier est deja dans le depot
-        QString relativePath = repoDir.relativeFilePath(sourceFile);
-        if (!relativePath.startsWith("..")) {
-            // Le fichier est deja dans le depot
-            logMessage(QString("Deja dans le depot: %1").arg(sourceInfo.fileName()));
-            
-            // Ajouter a la liste avec juste le nom
-            QListWidgetItem* item = new QListWidgetItem(sourceInfo.fileName());
-            item->setData(Qt::UserRole, sourceFile); // Stocker le chemin complet
-            item->setToolTip(sourceFile); // Afficher le chemin complet au survol
-            ui->fileListWidget->addItem(item);
-            
-            alreadyInRepo++;
-            continue;
-        }
+        QListWidgetItem* item = new QListWidgetItem(displayName);
+        item->setData(Qt::UserRole, path);
+        item->setToolTip(path);
         
-        // Copier le fichier dans le depot
-        QString destPath = repoDir.filePath(sourceInfo.fileName());
-        
-        // Si le fichier existe deja, demander confirmation
-        if (QFileInfo::exists(destPath)) {
-            QMessageBox::StandardButton reply = QMessageBox::question(
-                this,
-                "Fichier existant",
-                QString("Le fichier '%1' existe deja dans le depot.\n\n"
-                       "Voulez-vous le remplacer ?")
-                    .arg(sourceInfo.fileName()),
-                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
-                QMessageBox::No
-            );
-            
-            if (reply == QMessageBox::Cancel) {
-                logMessage("Copie annulee par l'utilisateur.");
-                break;
-            }
-            
-            if (reply == QMessageBox::No) {
-                skippedCount++;
-                continue;
-            }
-            
-            // Supprimer le fichier existant
-            if (!QFile::remove(destPath)) {
-                logError(QString("Impossible de supprimer: %1")
-                        .arg(sourceInfo.fileName()));
-                skippedCount++;
-                continue;
-            }
-        }
-        
-        // Copier le fichier
-        if (QFile::copy(sourceFile, destPath)) {
-            logSuccess(QString("Copie: %1").arg(sourceInfo.fileName()));
-            
-            // Ajouter a la liste avec juste le nom
-            QListWidgetItem* item = new QListWidgetItem(sourceInfo.fileName());
-            item->setData(Qt::UserRole, destPath); // Stocker le chemin complet
-            item->setToolTip(destPath); // Afficher le chemin complet au survol
-            item->setForeground(QColor(0, 150, 0)); // Vert pour les fichiers copies
-            ui->fileListWidget->addItem(item);
-            
-            copiedCount++;
+        if (info.isDir()) {
+            item->setForeground(QColor(0, 100, 200)); // Bleu pour les dossiers
+            item->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
         } else {
-            logError(QString("Echec de la copie: %1").arg(sourceInfo.fileName()));
-            skippedCount++;
+            item->setForeground(QColor(0, 150, 0)); // Vert pour les fichiers
+            item->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
         }
+        
+        ui->fileListWidget->addItem(item);
     }
     
-    // Afficher un resume
-    if (copiedCount > 0 || alreadyInRepo > 0) {
-        QString summary;
-        if (copiedCount > 0) {
-            summary += QString("%1 fichier(s) copie(s)").arg(copiedCount);
-        }
-        if (alreadyInRepo > 0) {
-            if (!summary.isEmpty()) summary += ", ";
-            summary += QString("%1 deja dans le depot").arg(alreadyInRepo);
-        }
-        if (skippedCount > 0) {
-            if (!summary.isEmpty()) summary += ", ";
-            summary += QString("%1 ignore(s)").arg(skippedCount);
-        }
-        
-        logMessage(summary);
-        
-        if (copiedCount > 0) {
-            QMessageBox::information(this, "Fichiers ajoutes",
-                QString("%1 fichier(s) ont ete copies dans:\n%2\n\n"
-                       "Ces fichiers sont prets a etre envoyes sur GitHub.")
-                    .arg(copiedCount)
-                    .arg(m_repositoryPath));
-        }
-    } else {
-        logMessage("Aucun fichier n'a ete ajoute.");
-    }
+    logSuccess(QString("%1 element(s) ajoute(s) au depot").arg(paths.count()));
 }
 
 void MainWindow::on_pushToGitHubButton_clicked() {
@@ -527,24 +489,8 @@ void MainWindow::on_pushToGitHubButton_clicked() {
         return;
     }
     
-    // 3. Ajouter les fichiers (MODIFIÉ: utiliser addFiles au lieu de copyAndAddFiles)
-    QDir repoDir(m_repositoryPath);
-    QStringList files;
-    for (int i = 0; i < ui->fileListWidget->count(); ++i) {
-        QListWidgetItem* item = ui->fileListWidget->item(i);
-        // Recuperer le chemin complet stocke dans UserRole
-        QString filePath = item->data(Qt::UserRole).toString();
-        if (!filePath.isEmpty()) {
-            files << filePath;
-        } else {
-            // Fallback sur le texte si pas de donnees
-            files << repoDir.filePath(item->text());
-        }
-    }
-    
-    // CHANGEMENT: Utiliser addFiles au lieu de copyAndAddFiles
-    // car les fichiers sont déjà copiés dans le dépôt
-    if (!m_gitManager->addFiles(m_repositoryPath, files)) {
+    // 3. Ajouter TOUS les fichiers (récursif)
+    if (!m_gitManager->addAllFiles(m_repositoryPath)) {
         m_operationInProgress = false;
         return;
     }
@@ -565,7 +511,7 @@ void MainWindow::on_pushToGitHubButton_clicked() {
     logSuccess("=== OPERATIONS GIT TERMINEES AVEC SUCCES ===");
     
     QMessageBox::information(this, "Succes",
-        "Les fichiers ont ete pousses sur GitHub avec succes !\n\n"
+        "Le projet a ete pousse sur GitHub avec succes !\n\n"
         "Depot: " + m_remoteUrl + "\n"
         "Branche: " + m_branch);
     

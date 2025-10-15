@@ -730,3 +730,148 @@ bool GitManager::executeGitCommand(const QString& workingDir, const QStringList&
     
     return true;
 }
+
+int GitManager::copyDirectoryRecursively(const QString& sourcePath, const QString& destPath, 
+                                         QStringList& copiedFiles) {
+    QDir sourceDir(sourcePath);
+    if (!sourceDir.exists()) {
+        return 0;
+    }
+    
+    QDir destDir(destPath);
+    if (!destDir.exists()) {
+        destDir.mkpath(destPath);
+    }
+    
+    int count = 0;
+    
+    // Copier tous les fichiers du dossier actuel
+    QFileInfoList files = sourceDir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
+    for (const QFileInfo& fileInfo : files) {
+        if (m_cancelRequested) {
+            return count;
+        }
+        
+        QString destFile = destDir.filePath(fileInfo.fileName());
+        
+        // Supprimer si existe déjà
+        if (QFile::exists(destFile)) {
+            QFile::remove(destFile);
+        }
+        
+        if (QFile::copy(fileInfo.filePath(), destFile)) {
+            copiedFiles << destFile;
+            count++;
+            emit progressUpdate(count, -1, fileInfo.fileName());
+        } else {
+            qWarning() << "Echec de copie:" << fileInfo.filePath() << "vers" << destFile;
+        }
+    }
+    
+    // Copier recursivement tous les sous-dossiers
+    QFileInfoList dirs = sourceDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo& dirInfo : dirs) {
+        if (m_cancelRequested) {
+            return count;
+        }
+        
+        QString subDestPath = destDir.filePath(dirInfo.fileName());
+        count += copyDirectoryRecursively(dirInfo.filePath(), subDestPath, copiedFiles);
+    }
+    
+    return count;
+}
+
+bool GitManager::copyProjectRecursively(const QString& repoPath, const QStringList& paths, 
+                                        bool preserveStructure) {
+    if (paths.isEmpty()) {
+        setError(GitError::FileNotFound, "Aucun fichier ou dossier a copier.");
+        emit operationFailed(m_lastError, m_lastErrorCode);
+        return false;
+    }
+    
+    QStringList allCopiedFiles;
+    int totalCount = 0;
+    
+    emit operationStarted(QString("Copie de %1 element(s)...").arg(paths.count()));
+    
+    QDir repoDir(repoPath);
+    
+    for (const QString& path : paths) {
+        if (m_cancelRequested) {
+            m_cancelRequested = false;
+            setError(GitError::UserCancelled, "Operation annulee par l'utilisateur.");
+            emit operationFailed(m_lastError, m_lastErrorCode);
+            return false;
+        }
+        
+        QFileInfo pathInfo(path);
+        
+        if (!pathInfo.exists()) {
+            qWarning() << "Element introuvable, ignore:" << path;
+            continue;
+        }
+        
+        if (pathInfo.isFile()) {
+            // Copier un fichier unique
+            QString destFile = repoDir.filePath(pathInfo.fileName());
+            
+            if (QFile::exists(destFile)) {
+                QFile::remove(destFile);
+            }
+            
+            if (QFile::copy(path, destFile)) {
+                allCopiedFiles << destFile;
+                totalCount++;
+                emit operationStarted(QString("Copie: %1").arg(pathInfo.fileName()));
+            } else {
+                qWarning() << "Echec de copie:" << path;
+            }
+            
+        } else if (pathInfo.isDir()) {
+            // Copier un dossier recursivement
+            QString folderName = pathInfo.fileName();
+            QString destFolder = repoDir.filePath(folderName);
+            
+            emit operationStarted(QString("Copie du dossier: %1...").arg(folderName));
+            
+            QStringList dirFiles;
+            int dirCount = copyDirectoryRecursively(path, destFolder, dirFiles);
+            
+            allCopiedFiles.append(dirFiles);
+            totalCount += dirCount;
+            
+            emit operationSuccess(QString("Dossier %1: %2 fichier(s) copie(s)")
+                                .arg(folderName)
+                                .arg(dirCount));
+        }
+    }
+    
+    if (totalCount == 0) {
+        setError(GitError::FileNotFound, "Aucun fichier n'a pu etre copie.");
+        emit operationFailed(m_lastError, m_lastErrorCode);
+        return false;
+    }
+    
+    emit operationSuccess(QString("Total: %1 fichier(s) copie(s)").arg(totalCount));
+    return true;
+}
+
+bool GitManager::addAllFiles(const QString& repoPath) {
+    emit operationStarted("Ajout de tous les fichiers au depot Git...");
+    
+    // Utiliser "git add -A" pour ajouter tous les fichiers
+    if (!executeGitCommand(repoPath, QStringList() << "add" << "-A")) {
+        emit operationFailed(m_lastError, m_lastErrorCode);
+        return false;
+    }
+    
+    if (m_cancelRequested) {
+        m_cancelRequested = false;
+        setError(GitError::UserCancelled, "Operation annulee par l'utilisateur.");
+        return false;
+    }
+    
+    emit operationSuccess("Tous les fichiers ont ete ajoutes a l'index Git");
+    return true;
+}

@@ -47,6 +47,24 @@ public:
     bool copyAndAddFiles(const QString& repoPath, const QStringList& files,
                          const QString& subdir = QString());
     bool addFiles(const QString& repoPath, const QStringList& files);
+    
+    /**
+     * @brief Copie recursivement des dossiers et fichiers dans le depot
+     * @param repoPath Chemin du depot
+     * @param paths Liste de chemins (fichiers ou dossiers)
+     * @param preserveStructure Si true, preserve la structure des dossiers
+     * @return true si succes
+     */
+    bool copyProjectRecursively(const QString& repoPath, const QStringList& paths, 
+                                 bool preserveStructure = true);
+    
+    /**
+     * @brief Ajoute recursivement tous les fichiers d'un depot a Git
+     * @param repoPath Chemin du depot
+     * @return true si succes
+     */
+    bool addAllFiles(const QString& repoPath);
+    
     bool commit(const QString& repoPath, const QString& message);
 
     /**
@@ -123,6 +141,7 @@ signals:
     void retryAttempt(int attempt, int maxAttempts);
     void connectionCheckStarted();
     void connectionCheckCompleted(bool success);
+    void progressUpdate(int current, int total, const QString& currentItem);
 
 private:
     bool executeGitCommand(const QString& workingDir, const QStringList& arguments,
@@ -132,6 +151,16 @@ private:
     GitError detectErrorType(const QString& errorOutput);
     bool shouldRetry(GitError errorCode);
     void waitBeforeRetry(int attemptNumber);
+    
+    /**
+     * @brief Copie recursivement un dossier
+     * @param sourcePath Chemin source
+     * @param destPath Chemin destination
+     * @param copiedFiles Liste des fichiers copies (output)
+     * @return Nombre de fichiers copies
+     */
+    int copyDirectoryRecursively(const QString& sourcePath, const QString& destPath, 
+                                  QStringList& copiedFiles);
 
     QString m_lastError;
     QString m_lastOutput;
