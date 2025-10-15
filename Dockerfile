@@ -2,7 +2,7 @@
 FROM ubuntu:22.04 AS build
 
 # Installation des dépendances
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     git \
@@ -14,16 +14,13 @@ RUN apt-get update && apt-get install -y \
     libxcb-keysyms1-dev \
     libxcb-render-util0-dev \
     libxcb-xinerama0-dev \
-    libxcb-render-util0-dev \
-    libxcb-xinerama0-dev
+    && rm -rf /var/lib/apt/lists/*
 
-# Copie sélective uniquement des fichiers nécessaires
+# Créer un répertoire de travail
 WORKDIR /app
 
-# Copier les fichiers de configuration CMake
+# Copie sélective uniquement des fichiers nécessaires
 COPY CMakeLists.txt ./
-
-# Copier les répertoires source
 COPY src/ ./src/
 COPY include/ ./include/
 COPY ui/ ./ui/
@@ -36,18 +33,18 @@ RUN cmake --build build -j $(nproc)
 # Étape 2: Environnement d'exécution minimal
 FROM ubuntu:22.04
 
-# Créer un utilisateur non-root pour plus de sécurité
-RUN useradd -m -u 1000 appuser
+# Créer un utilisateur non-root
+RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
 
 # Installation des dépendances d'exécution Qt
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libqt6core6 \
     libqt6gui6 \
     libqt6widgets6 \
     libqt6network6 \
     libxkbcommon-x11-0 \
-    libxcb-xinerama0 && \
-    rm -rf /var/lib/apt/lists/*
+    libxcb-xinerama0 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copie du binaire compilé
 WORKDIR /app

@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout du code
-      uses: actions/checkout@v3
+      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744  # v3.6.0
 
     - name: Installation des dépendances Qt
       run: |
@@ -32,12 +32,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout du code
-      uses: actions/checkout@v3
+      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744  # v3.6.0
       with:
-        fetch-depth: 0 # Nécessaire pour l'analyse
+        fetch-depth: 0
 
     - name: Analyse SonarCloud
-      uses: SonarSource/sonarcloud-github-action@master
+      uses: SonarSource/sonarcloud-github-action@49e6cd3b187936a73b8280d59ffd9da69df63ec9  # v2.1.1
       env:
         GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -46,22 +46,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout du code
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744  # v3.6.0
 
       - name: Construction de l'image Docker
         run: docker build . -t rogue-publisher:latest
       
-      - name: Test de l'image Docker (Vérification de la création du binaire)
+      - name: Test de l'image Docker
         run: |
           docker run --entrypoint /bin/bash rogue-publisher:latest -c "if [ -f /app/rogue-publisher ]; then echo 'Binaire trouvé.'; else echo 'Erreur: Binaire non trouvé.'; exit 1; fi"
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-and-test, sonarcloud-analysis, test-docker-image] # <-- LIGNE CORRIGÉE
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [build-and-test, sonarcloud-analysis, test-docker-image]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout du code
-      uses: actions/checkout@v3
+      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744  # v3.6.0
 
     - name: Installation des dépendances Qt
       run: |
@@ -80,7 +80,7 @@ jobs:
         tar -czvf rogue-publisher-linux.tar.gz -C deploy .
 
     - name: Création de la Release GitHub
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844  # v1.0.2
       with:
         files: rogue-publisher-linux.tar.gz
         tag_name: v1.0.${{ github.run_number }}
