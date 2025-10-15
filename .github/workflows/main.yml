@@ -39,7 +39,8 @@ jobs:
     - name: Analyse SonarCloud
       uses: SonarSource/sonarcloud-github-action@master
       env:
-        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+        # CORRIGÉ : Utilisation du bon nom de secret
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     
   test-docker-image:
@@ -57,7 +58,7 @@ jobs:
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-and-test, sonarcloud-analysis, test-docker-image] # <-- LIGNE CORRIGÉE
+    needs: [build-and-test, sonarcloud-analysis, test-docker-image]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout du code
@@ -85,4 +86,5 @@ jobs:
         files: rogue-publisher-linux.tar.gz
         tag_name: v1.0.${{ github.run_number }}
       env:
-        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+        # CORRIGÉ : Utilisation du bon nom de secret
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
