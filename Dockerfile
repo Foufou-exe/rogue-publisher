@@ -25,6 +25,7 @@ COPY src/ ./src/
 COPY include/ ./include/
 COPY ui/ ./ui/
 COPY resources/ ./resources/
+COPY tests/ ./tests/
 
 # Compilation
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release
