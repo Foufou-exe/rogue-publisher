@@ -57,7 +57,7 @@ jobs:
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-and-test, code-quality-sonarqube, test-docker-image]
+    needs: [build-and-test, sonarcloud-analysis, test-docker-image]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout du code
