@@ -1,0 +1,23 @@
+﻿# Ignore Docker and Git files
+.dockerignore
+.git
+.gitattributes
+.github
+.gitignore
+
+# Ignore build artifacts and output folders
+build/
+build-release/
+out/
+
+# Ignore IDE and editor configuration
+.idea/
+.vs/
+.vscode/
+*.suo
+*.user
+*.pro.user*
+
+# Ignore system files
+.DS_Store
+Thumbs.db
