@@ -12,6 +12,8 @@ jobs:
     steps:
     - name: Checkout du code
       uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744  # v3.6.0
+      with:
+        fetch-depth: 0  # Nécessaire pour l'historique Git complet
 
     - name: Installation des dépendances Qt
       run: |
@@ -27,6 +29,16 @@ jobs:
     - name: Lancement des tests (Unitaires et Non-Régression)
       run: ctest --test-dir build --output-on-failure
 
+    # ✅ Sauvegarder les artefacts pour SonarCloud
+    - name: Upload compile_commands.json
+      uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808  # v4.3.3
+      with:
+        name: build-artifacts
+        path: |
+          build/compile_commands.json
+          build/
+        retention-days: 1
+
   sonarcloud-analysis:
     needs: build-and-test
     runs-on: ubuntu-latest
@@ -34,12 +46,41 @@ jobs:
     - name: Checkout du code
       uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744  # v3.6.0
       with:
-        fetch-depth: 0
+        fetch-depth: 0  # ✅ Nécessaire pour l'analyse complète SonarCloud
 
+    - name: Installation des dépendances Qt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake git qt6-base-dev qt6-tools-dev
+
+    # ✅ Télécharger les artefacts de build
+    - name: Download build artifacts
+      uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e  # v4.1.7
+      with:
+        name: build-artifacts
+        path: build/
+
+    # ✅ Reconfigurer CMake pour générer compile_commands.json
+    - name: Configuration de CMake pour SonarCloud
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+    # ✅ Build wrapper pour SonarCloud (optionnel mais recommandé pour C++)
+    - name: Installation de build-wrapper
+      run: |
+        curl -sSLo build-wrapper-linux-x86.zip https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
+        unzip -o build-wrapper-linux-x86.zip
+
+    - name: Compilation avec build-wrapper
+      run: |
+        build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw-output cmake --build build -j $(nproc)
+
+    # ✅ Analyse SonarCloud avec les bonnes variables d'environnement
     - name: Analyse SonarCloud
       uses: SonarSource/sonarcloud-github-action@49e6cd3b187936a73b8280d59ffd9da69df63ec9  # v2.1.1
+      with:
+        projectBaseDir: ${{ github.workspace }}
       env:
-        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GI_TOKEN }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     
   test-docker-image:
