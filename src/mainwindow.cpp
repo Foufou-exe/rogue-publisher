@@ -59,13 +59,38 @@ MainWindow::MainWindow(QWidget* parent)
         
         if (!m_repositoryPath.isEmpty()) {
             logMessage("Configuration chargee: " + m_repositoryPath);
+            
+            // NOUVEAU: Effectuer un pull automatique au démarrage si le dépôt est configuré
+            if (m_gitManager->isGitRepository(m_repositoryPath) && !m_remoteUrl.isEmpty()) {
+                logMessage("Synchronisation avec le depot distant au demarrage...");
+                
+                // Demander le token si nécessaire pour le pull initial (optionnel)
+                // Ici on fait un pull simple sans authentification
+                // Si votre dépôt nécessite une authentification, décommentez les lignes ci-dessous
+                /*
+                bool ok;
+                QString token = QInputDialog::getText(this,
+                    "Synchronisation initiale",
+                    "Token GitHub (optionnel pour les depots publics):",
+                    QLineEdit::Password,
+                    QString(),
+                    &ok);
+                */
+                
+                // Pull sans authentification (pour dépôts publics)
+                if (m_gitManager->pull(m_repositoryPath, m_branch, QString(), QString())) {
+                    logSuccess("Synchronisation initiale terminee");
+                } else {
+                    logMessage("Synchronisation initiale ignoree (depot peut-etre vide ou prive)");
+                }
+            }
         } else {
             logMessage("Configurez votre depot via: Actions > Configurer Git");
         }
     }
     
     // Message d'aide dans les logs au lieu de la barre d'état
-    logMessage("Workflow: 1) Ajouter fichiers → 2) Push sur GitHub (un pull automatique sera effectue)");
+    logMessage("Workflow: 1) Ajouter fichiers → 2) Push sur GitHub");
 }
 
 MainWindow::~MainWindow() {
@@ -502,30 +527,7 @@ void MainWindow::on_pushToGitHubButton_clicked() {
         return;
     }
     
-    // NOUVEAU: 2.5. Faire un pull avant de push
-    logMessage("Synchronisation avec le depot distant...");
-    if (!m_gitManager->pull(m_repositoryPath, m_branch, m_githubUsername, token)) {
-        // Si le pull échoue, demander à l'utilisateur quoi faire
-        QMessageBox::StandardButton reply = QMessageBox::question(
-            this,
-            "Conflit de synchronisation",
-            "Le depot distant contient des modifications que vous n'avez pas localement.\n\n"
-            "Voulez-vous forcer le push (ATTENTION: cela ecrasera les modifications distantes) ?",
-            QMessageBox::Yes | QMessageBox::No,
-            QMessageBox::No
-        );
-        
-        if (reply != QMessageBox::Yes) {
-            logMessage("Push annule - Synchronisation requise");
-            m_operationInProgress = false;
-            return;
-        }
-        
-        logMessage("Mode force active...");
-    }
-    
-    // 3. Ajouter les fichiers
-    // CORRECTION: Déclarer repoDir ici
+    // 3. Ajouter les fichiers (MODIFIÉ: utiliser addFiles au lieu de copyAndAddFiles)
     QDir repoDir(m_repositoryPath);
     QStringList files;
     for (int i = 0; i < ui->fileListWidget->count(); ++i) {
@@ -540,7 +542,9 @@ void MainWindow::on_pushToGitHubButton_clicked() {
         }
     }
     
-    if (!m_gitManager->copyAndAddFiles(m_repositoryPath, files)) {
+    // CHANGEMENT: Utiliser addFiles au lieu de copyAndAddFiles
+    // car les fichiers sont déjà copiés dans le dépôt
+    if (!m_gitManager->addFiles(m_repositoryPath, files)) {
         m_operationInProgress = false;
         return;
     }
