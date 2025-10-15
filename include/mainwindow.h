@@ -167,6 +167,7 @@ QT_END_NAMESPACE
         QString m_remoteUrl;
         QString m_branch;
         QString m_githubUsername;
+        QString m_githubToken;  // NOUVEAU
         
         bool m_operationInProgress; // Indique si une operation Git est en cours
 };

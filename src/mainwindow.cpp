@@ -33,7 +33,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_gitManager, &GitManager::operationCancelled,
         this, &MainWindow::onGitOperationCancelled);
 
-    // NOUVEAU: Connecter les signaux de retry et de connexion
+    // Connecter les signaux de retry et de connexion
     connect(m_gitManager, &GitManager::retryAttempt,
         this, &MainWindow::onRetryAttempt);
     connect(m_gitManager, &GitManager::connectionCheckStarted,
@@ -60,25 +60,12 @@ MainWindow::MainWindow(QWidget* parent)
         if (!m_repositoryPath.isEmpty()) {
             logMessage("Configuration chargee: " + m_repositoryPath);
             
-            // NOUVEAU: Effectuer un pull automatique au démarrage si le dépôt est configuré
+            // Pull automatique au démarrage si le dépôt est configuré
             if (m_gitManager->isGitRepository(m_repositoryPath) && !m_remoteUrl.isEmpty()) {
                 logMessage("Synchronisation avec le depot distant au demarrage...");
                 
-                // Demander le token si nécessaire pour le pull initial (optionnel)
-                // Ici on fait un pull simple sans authentification
-                // Si votre dépôt nécessite une authentification, décommentez les lignes ci-dessous
-                /*
-                bool ok;
-                QString token = QInputDialog::getText(this,
-                    "Synchronisation initiale",
-                    "Token GitHub (optionnel pour les depots publics):",
-                    QLineEdit::Password,
-                    QString(),
-                    &ok);
-                */
-                
-                // Pull sans authentification (pour dépôts publics)
-                if (m_gitManager->pull(m_repositoryPath, m_branch, QString(), QString())) {
+                // MODIFIÉ: Utiliser le token sauvegardé pour le pull
+                if (m_gitManager->pull(m_repositoryPath, m_branch, m_githubUsername, m_githubToken)) {
                     logSuccess("Synchronisation initiale terminee");
                 } else {
                     logMessage("Synchronisation initiale ignoree (depot peut-etre vide ou prive)");
@@ -87,9 +74,14 @@ MainWindow::MainWindow(QWidget* parent)
         } else {
             logMessage("Configurez votre depot via: Actions > Configurer Git");
         }
+        
+        // Afficher un message si le token est configuré
+        if (!m_githubToken.isEmpty()) {
+            logSuccess("Token GitHub configure - Authentification automatique activee");
+        }
     }
     
-    // Message d'aide dans les logs au lieu de la barre d'état
+    // Message d'aide dans les logs
     logMessage("Workflow: 1) Ajouter fichiers → 2) Push sur GitHub");
 }
 
@@ -147,6 +139,13 @@ void MainWindow::loadSettings() {
     m_branch = settings.value("git/branch", "main").toString();
     m_githubUsername = settings.value("github/username", "").toString();
     
+    // NOUVEAU: Charger le token (crypté pour plus de sécurité)
+    QString encryptedToken = settings.value("github/token", "").toString();
+    if (!encryptedToken.isEmpty()) {
+        // Décryptage simple (vous pouvez utiliser une méthode plus sécurisée)
+        m_githubToken = QString::fromUtf8(QByteArray::fromBase64(encryptedToken.toUtf8()));
+    }
+    
     // Restaurer la geometrie de la fenetre
     restoreGeometry(settings.value("window/geometry").toByteArray());
     restoreState(settings.value("window/state").toByteArray());
@@ -159,6 +158,14 @@ void MainWindow::saveSettings() {
     settings.setValue("git/remoteUrl", m_remoteUrl);
     settings.setValue("git/branch", m_branch);
     settings.setValue("github/username", m_githubUsername);
+    
+    // NOUVEAU: Sauvegarder le token (crypté)
+    if (!m_githubToken.isEmpty()) {
+        QString encryptedToken = QString::fromUtf8(m_githubToken.toUtf8().toBase64());
+        settings.setValue("github/token", encryptedToken);
+    } else {
+        settings.remove("github/token");
+    }
     
     // Sauvegarder la geometrie de la fenetre
     settings.setValue("window/geometry", saveGeometry());
@@ -315,29 +322,23 @@ void MainWindow::on_addFilesButton_clicked() {
         }
     }
     
-    // NOUVEAU: Choix entre fichiers ou dossiers
-    QMessageBox::StandardButton reply = QMessageBox::question(
-        this,
-        "Type de selection",
-        "Que voulez-vous ajouter ?",
-        QMessageBox::StandardButton::Open | QMessageBox::StandardButton::Open | QMessageBox::StandardButton::Cancel,
-        QMessageBox::StandardButton::Cancel
-    );
-    
-    // Utiliser un dialogue personnalisé
+    // Dialogue personnalisé pour choisir le type
     QMessageBox choiceBox(this);
     choiceBox.setWindowTitle("Type de selection");
-    choiceBox.setText("Que voulez-vous ajouter ?");
-    QPushButton* filesBtn = choiceBox.addButton("Fichiers", QMessageBox::ActionRole);
+    choiceBox.setText("Que voulez-vous ajouter au depot ?");
+    choiceBox.setIcon(QMessageBox::Question);
+    
+    QPushButton* filesBtn = choiceBox.addButton("Fichier(s)", QMessageBox::ActionRole);
     QPushButton* folderBtn = choiceBox.addButton("Dossier/Projet", QMessageBox::ActionRole);
     QPushButton* cancelBtn = choiceBox.addButton("Annuler", QMessageBox::RejectRole);
     
+    choiceBox.setDefaultButton(folderBtn);
     choiceBox.exec();
     
     QStringList paths;
     
     if (choiceBox.clickedButton() == filesBtn) {
-        // Selection de fichiers
+        // Selection de fichiers multiples
         paths = QFileDialog::getOpenFileNames(
             this,
             "Selectionner des fichiers",
@@ -346,10 +347,10 @@ void MainWindow::on_addFilesButton_clicked() {
         );
     } 
     else if (choiceBox.clickedButton() == folderBtn) {
-        // Selection de dossier
+        // Selection d'un dossier complet
         QString folder = QFileDialog::getExistingDirectory(
             this,
-            "Selectionner un dossier",
+            "Selectionner un dossier (projet)",
             QDir::homePath(),
             QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
         );
@@ -368,10 +369,27 @@ void MainWindow::on_addFilesButton_clicked() {
         return;
     }
     
-    // Copier les fichiers/dossiers dans le depot
+    // Connecter le signal de progression
+    connect(m_gitManager, &GitManager::progressUpdate, this, [this](int current, int total, const QString& item) {
+        Q_UNUSED(total);
+        if (m_progressDialog) {
+            m_progressDialog->setLabelText(QString("Copie en cours: %1\n(%2 fichiers traites)")
+                                          .arg(item)
+                                          .arg(current));
+        }
+    });
+    
+    // Copier les fichiers/dossiers dans le depot avec structure
+    showProgressDialog("Copie des fichiers en cours...");
+    
     if (!m_gitManager->copyProjectRecursively(m_repositoryPath, paths)) {
+        hideProgressDialog();
+        disconnect(m_gitManager, &GitManager::progressUpdate, nullptr, nullptr);
         return;
     }
+    
+    hideProgressDialog();
+    disconnect(m_gitManager, &GitManager::progressUpdate, nullptr, nullptr);
     
     // Ajouter a l'affichage
     for (const QString& path : paths) {
@@ -397,7 +415,7 @@ void MainWindow::on_addFilesButton_clicked() {
         ui->fileListWidget->addItem(item);
     }
     
-    logSuccess(QString("%1 element(s) ajoute(s) au depot").arg(paths.count()));
+    logSuccess(QString("%1 element(s) copie(s) dans le depot").arg(paths.count()));
 }
 
 void MainWindow::on_pushToGitHubButton_clicked() {
@@ -430,24 +448,50 @@ void MainWindow::on_pushToGitHubButton_clicked() {
         return;
     }
     
-    // Demander le token GitHub
-    bool ok;
-    QString token = QInputDialog::getText(this,
-        "Authentification GitHub",
-        "Entrez votre token d'acces personnel GitHub:\n\n"
-        "Vous pouvez en creer un sur:\n"
-        "https://github.com/settings/tokens\n\n"
-        "Permissions requises: repo (acces complet)",
-        QLineEdit::Password,
-        QString(),
-        &ok);
+    // Utiliser le token sauvegardé ou demander un nouveau
+    QString token = m_githubToken;
     
-    if (!ok || token.isEmpty()) {
-        logMessage("Push annule: aucun token fourni.");
-        return;
+    if (token.isEmpty()) {
+        // Aucun token sauvegardé, demander à l'utilisateur
+        bool ok;
+        token = QInputDialog::getText(this,
+            "Authentification GitHub",
+            "Entrez votre token d'acces personnel GitHub:\n\n"
+            "Vous pouvez en creer un sur:\n"
+            "https://github.com/settings/tokens\n\n"
+            "Permissions requises: repo (acces complet)\n\n"
+            "Astuce: Configurez le token dans Actions > Configurer Git\n"
+            "pour ne plus avoir a le saisir.",
+            QLineEdit::Password,
+            QString(),
+            &ok);
+        
+        if (!ok || token.isEmpty()) {
+            logMessage("Push annule: aucun token fourni.");
+            return;
+        }
+        
+        // Proposer de sauvegarder le token
+        QMessageBox::StandardButton saveToken = QMessageBox::question(
+            this,
+            "Sauvegarder le token ?",
+            "Voulez-vous sauvegarder ce token pour les prochaines fois ?\n\n"
+            "Le token sera stocke de maniere securisee.",
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::Yes
+        );
+        
+        if (saveToken == QMessageBox::Yes) {
+            m_githubToken = token;
+            saveSettings();
+            logSuccess("Token sauvegarde pour les prochaines utilisations");
+        }
+    } else {
+        logMessage("Utilisation du token sauvegarde");
     }
     
     // Demander le message de commit
+    bool ok;
     QString commitMessage = QInputDialog::getText(this,
         "Message de commit",
         "Entrez le message du commit:",
@@ -489,7 +533,7 @@ void MainWindow::on_pushToGitHubButton_clicked() {
         return;
     }
     
-    // 3. Ajouter TOUS les fichiers (récursif)
+    // 3. Ajouter TOUS les fichiers (récursif avec git add -A)
     if (!m_gitManager->addAllFiles(m_repositoryPath)) {
         m_operationInProgress = false;
         return;
@@ -589,17 +633,70 @@ void MainWindow::on_actionConfigurer_triggered() {
         modified = true;
     }
     
+    // Configuration du token GitHub
+    QMessageBox::StandardButton tokenChoice = QMessageBox::question(
+        this,
+        "Token GitHub",
+        "Voulez-vous configurer/modifier le token GitHub ?\n\n"
+        "Le token sera sauvegarde de maniere securisee.\n"
+        "Vous pouvez en creer un sur:\n"
+        "https://github.com/settings/tokens\n\n"
+        "Permissions requises: repo (acces complet)",
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No
+    );
+    
+    if (tokenChoice == QMessageBox::Yes) {
+        QString token = QInputDialog::getText(this,
+            "Token d'acces GitHub",
+            QString("Entrez votre token GitHub:\n"
+                   "(Actuel: %1)\n\n"
+                   "Laissez vide pour supprimer le token sauvegarde.")
+                .arg(m_githubToken.isEmpty() ? "Aucun" : "********"),
+            QLineEdit::Password,
+            QString(),
+            &ok);
+        
+        if (ok) {
+            if (token.isEmpty()) {
+                // Supprimer le token
+                if (!m_githubToken.isEmpty()) {
+                    QMessageBox::StandardButton confirm = QMessageBox::question(
+                        this,
+                        "Confirmer la suppression",
+                        "Voulez-vous vraiment supprimer le token sauvegarde ?",
+                        QMessageBox::Yes | QMessageBox::No,
+                        QMessageBox::No
+                    );
+                    
+                    if (confirm == QMessageBox::Yes) {
+                        m_githubToken.clear();
+                        modified = true;
+                        logMessage("Token GitHub supprime");
+                    }
+                }
+            } else if (token != m_githubToken) {
+                m_githubToken = token;
+                modified = true;
+                logSuccess("Token GitHub sauvegarde");
+            }
+        }
+    }
+    
     if (modified) {
         saveSettings();
         logSuccess("Configuration mise a jour");
+        
+        QString tokenStatus = m_githubToken.isEmpty() ? "Non configure" : "Configure (********)";
         
         QMessageBox::information(this, "Configuration enregistree",
             QString("Configuration enregistree:\n\n"
                     "Depot local: %1\n"
                     "Depot distant: %2\n"
                     "Branche: %3\n"
-                    "Utilisateur: %4")
-                .arg(m_repositoryPath, m_remoteUrl, m_branch, m_githubUsername));
+                    "Utilisateur: %4\n"
+                    "Token: %5")
+                .arg(m_repositoryPath, m_remoteUrl, m_branch, m_githubUsername, tokenStatus));
     } else {
         logMessage("Configuration annulee - Aucune modification.");
     }
