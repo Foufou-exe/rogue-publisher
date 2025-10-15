@@ -1,0 +1,88 @@
+﻿name: Rogue Publisher CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout du code
+      uses: actions/checkout@v3
+
+    - name: Installation des dépendances Qt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake git qt6-base-dev qt6-tools-dev
+
+    - name: Configuration de CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+    - name: Compilation du projet
+      run: cmake --build build -j $(nproc)
+
+    - name: Lancement des tests (Unitaires et Non-Régression)
+      run: ctest --test-dir build --output-on-failure
+
+  sonarcloud-analysis:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout du code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # Nécessaire pour l'analyse
+
+    - name: Analyse SonarCloud
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }} # Nécessaire pour la décoration des PR
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Token généré depuis SonarCloud
+    
+  test-docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v3
+
+      - name: Construction de l'image Docker
+        run: docker build . -t rogue-publisher:latest
+      
+      - name: Test de l'image Docker (Vérification de la création du binaire)
+        run: |
+          docker run --entrypoint /bin/bash rogue-publisher:latest -c "if [ -f /app/rogue-publisher ]; then echo 'Binaire trouvé.'; else echo 'Erreur: Binaire non trouvé.'; exit 1; fi"
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build-and-test, code-quality-sonarqube, test-docker-image]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout du code
+      uses: actions/checkout@v3
+
+    - name: Installation des dépendances Qt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake git qt6-base-dev
+
+    - name: Compilation en mode Release
+      run: |
+        cmake -B build-release -DCMAKE_BUILD_TYPE=Release
+        cmake --build build-release --target rogue-publisher -j $(nproc)
+
+    - name: Création de l'archive pour le déploiement
+      run: |
+        mkdir -p deploy
+        cp build-release/rogue-publisher deploy/
+        tar -czvf rogue-publisher-linux.tar.gz -C deploy .
+
+    - name: Création de la Release GitHub
+      uses: softprops/action-gh-release@v1
+      with:
+        files: rogue-publisher-linux.tar.gz
+        tag_name: v1.0.${{ github.run_number }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}

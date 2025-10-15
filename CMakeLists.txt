@@ -28,6 +28,12 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+# --- Active la génération de compile_commands.json pour SonarQube
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# --- Ajout de la section pour les tests ---
+enable_testing()
+
 # Recherche automatique de Qt
 if(NOT DEFINED CMAKE_PREFIX_PATH)
     if(WIN32)
@@ -39,6 +45,8 @@ find_package(Qt6 REQUIRED COMPONENTS
     Core
     Gui
     Widgets
+    Network
+    Test
 )
 
 # --- Definition des sources
@@ -61,7 +69,11 @@ set(PROJECT_RESOURCES
     resources/resources.qrc
 )
 
-# --- Creation de l'executable
+set(PROJECT_TEST_SOURCES
+    tests/test_gitmanager.cpp
+)
+
+# --- Creation de l'executable principal
 add_executable(${PROJECT_NAME}
     WIN32
     ${PROJECT_SOURCES}
@@ -102,22 +114,34 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 endif()
 
-
-# Ajouter le module Network de Qt
-find_package(Qt6 REQUIRED COMPONENTS 
-    Core
-    Gui
-    Widgets
-    Network  # Ajoutez cette ligne
-)
-
-# --- Liaison avec Qt
+# --- Liaison avec Qt (sans Test pour l'executable principal)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
     Qt6::Network
 )
+
+# --- Creation de l'executable de tests
+add_executable(RoguePublisherTests
+    ${PROJECT_TEST_SOURCES}
+    src/gitmanager.cpp
+    include/gitmanager.h
+)
+
+target_include_directories(RoguePublisherTests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(RoguePublisherTests PRIVATE
+    Qt6::Core
+    Qt6::Network
+    Qt6::Test
+)
+
+# Ajouter le test à CTest
+add_test(NAME UnitTests COMMAND RoguePublisherTests)
 
 # --- Deploiement automatique des DLL Qt (Windows uniquement)
 if(WIN32)
